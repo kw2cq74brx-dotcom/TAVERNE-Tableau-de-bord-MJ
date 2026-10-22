@@ -18,3 +18,13 @@ SELECT * FROM (VALUES
     ('Legolas', 'Archer',   15)
 ) AS v(nom, classe, niveau)
 WHERE NOT EXISTS (SELECT 1 FROM Personnage);
+
+-- Table des comptes (Maîtres du Jeu).
+-- On ne stocke JAMAIS le mot de passe en clair : seulement son empreinte Bcrypt.
+-- Le compte est créé avec : npm run create-mj -- <email> <motdepasse>
+CREATE TABLE IF NOT EXISTS Utilisateur (
+    id           SERIAL PRIMARY KEY,
+    email        VARCHAR(255) NOT NULL UNIQUE,              -- UNIQUE = deux comptes ne peuvent pas avoir le même email
+    mot_de_passe VARCHAR(60)  NOT NULL,                     -- une empreinte Bcrypt fait toujours 60 caractères
+    role         VARCHAR(30)  NOT NULL DEFAULT 'Maitre_Du_Jeu'
+);
