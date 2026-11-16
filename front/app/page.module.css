@@ -1,0 +1,176 @@
+/* Couleurs de l'interface (thème clair par défaut) */
+.main {
+  --fond-carte: #ffffff;
+  --bordure: #e4e4e7;
+  --texte: #18181b;
+  --texte-doux: #71717a;
+  --accent: #b45309;
+  --accent-texte: #ffffff;
+  --erreur: #b91c1c;
+  --erreur-fond: #fef2f2;
+  --succes: #15803d;
+  --succes-fond: #f0fdf4;
+
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 40px 24px;
+  color: var(--texte);
+  font-family: var(--font-geist-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  .main {
+    --fond-carte: #18181b;
+    --bordure: #27272a;
+    --texte: #f4f4f5;
+    --texte-doux: #a1a1aa;
+    --accent: #f59e0b;
+    --accent-texte: #18181b;
+    --erreur: #f87171;
+    --erreur-fond: #2a1414;
+    --succes: #4ade80;
+    --succes-fond: #10241a;
+  }
+}
+
+/* En-tête */
+.entete h1 {
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+.entete p {
+  color: var(--texte-doux);
+}
+
+/* Écran de connexion : tout est centré.
+   :has() = "si la page contient le formulaire de connexion".
+   Le tableau de bord, lui, garde son alignement à gauche. */
+.main:has(.connexion) .entete {
+  text-align: center;
+}
+
+.connexion {
+  width: 100%;
+  margin: 0 auto; /* centre la carte horizontalement */
+}
+
+.connexion h2 {
+  text-align: center;
+}
+
+/* Cartes : formulaires */
+.carte {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+  padding: 24px;
+  border: 1px solid var(--bordure);
+  border-radius: 12px;
+  background: var(--fond-carte);
+}
+
+.carte h2 {
+  font-size: 20px;
+}
+
+.carte label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--texte-doux);
+}
+
+.carte input {
+  padding: 8px 10px;
+  border: 1px solid var(--bordure);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--texte);
+  font-size: 16px;
+}
+
+.main button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-texte);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.main button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.main button.secondaire {
+  border: 1px solid var(--bordure);
+  background: transparent;
+  color: var(--texte);
+  font-weight: 500;
+}
+
+/* Messages */
+.erreur,
+.alerte {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--erreur-fond);
+  color: var(--erreur);
+}
+
+.succes {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--succes-fond);
+  color: var(--succes);
+}
+
+/* Tableau de bord */
+.tableau {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.barre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  list-style: none;
+}
+
+.pnj {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--bordure);
+  border-radius: 12px;
+  background: var(--fond-carte);
+}
+
+.pnj span {
+  color: var(--texte-doux);
+}
+
+.pnj .niveau {
+  color: var(--accent);
+  font-weight: 600;
+}
