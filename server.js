@@ -13,12 +13,18 @@ const express = require("express");
 const cors = require("cors"); // cors : choisit quels sites ont le droit d'appeler l'API
 const bcrypt = require("bcrypt"); // bcrypt : compare un mot de passe avec son empreinte (hash)
 const jwt = require("jsonwebtoken"); // jwt : fabrique les badges de connexion (tokens)
+const helmet = require("helmet"); // helmet : ajoute des en-têtes HTTP de sécurité
+const { rateLimit } = require("express-rate-limit"); // limite le nombre de tentatives
+const cookieParser = require("cookie-parser"); // lit les cookies envoyés par le navigateur
 
 // On importe la connexion à la base de données (fichier db.js).
 const pool = require("./db");
 
-// On importe notre Vigile (middleware qui vérifie le JWT).
-const verifierToken = require("./middlewares/auth");
+// On importe notre Vigile (vérifie le JWT) et le contrôle des rôles.
+const { verifierToken, exigerRole, NOM_COOKIE } = require("./middlewares/auth");
+
+// Seul le Maître du Jeu peut modifier les données de la Taverne.
+const reserveAuMJ = [verifierToken, exigerRole("Maitre_Du_Jeu")];
 
 // Sans clé secrète, impossible de signer les badges : on refuse de démarrer.
 if (!process.env.JWT_SECRET) {
@@ -39,9 +45,16 @@ const PORT = process.env.PORT || 3000;
 const corsOptions = {
   // La seule adresse autorisée (celle du Front Next.js)
   origin: process.env.FRONTEND_URL || "http://localhost:3001",
+  // Autorise le navigateur à envoyer le cookie du badge avec les requêtes
+  credentials: true,
   // Code renvoyé quand le navigateur demande la permission (requête "OPTIONS")
   optionsSuccessStatus: 200,
 };
+
+// Helmet ajoute des en-têtes HTTP qui protègent contre des attaques courantes
+// (ex : affichage de l'API dans une iframe, détection du type de fichier...).
+// "same-site" : le Front (localhost:3001) reste autorisé à lire nos réponses.
+app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
 
 // Le CORS se place TOUT EN HAUT, avant même express.json().
 app.use(cors(corsOptions));
@@ -50,6 +63,34 @@ app.use(cors(corsOptions));
 // Sans lui, req.body est vide (undefined).
 // Il doit être placé avant les routes.
 app.use(express.json());
+
+// Ce middleware lit les cookies : le badge devient lisible dans req.cookies.
+app.use(cookieParser());
+
+// Anti force brute : un pirate ne peut pas essayer des milliers de mots de passe.
+// Au-delà de 10 échecs en 15 minutes depuis la même adresse IP : code 429.
+// Les connexions réussies ne sont pas comptées.
+const limiteConnexion = rateLimit({
+  windowMs: 15 * 60 * 1000, // fenêtre de 15 minutes (en millisecondes)
+  limit: 10, // 10 tentatives ratées maximum par fenêtre
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7", // indique au client combien d'essais il lui reste
+  legacyHeaders: false,
+  message: {
+    erreur: "Trop de tentatives de connexion. Réessayez dans 15 minutes.",
+  },
+});
+
+// Options du cookie qui transporte le badge :
+// - httpOnly : le JavaScript de la page ne peut pas le lire (protection XSS)
+// - sameSite "strict" : le navigateur ne l'envoie jamais depuis un autre site (protection CSRF)
+// - secure : uniquement en HTTPS, donc activé en production seulement
+const optionsCookie = {
+  httpOnly: true,
+  sameSite: "strict",
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+};
 
 // Vérifie qu'un id est un nombre entier positif (ex : "3" oui, "abc" ou "-1" non).
 // /^\d+$/ veut dire : "uniquement des chiffres, du début à la fin".
@@ -65,7 +106,8 @@ const HASH_LEURRE = bcrypt.hashSync("leurre-taverne", 10);
 
 // POST /api/auth/login : échanger ses identifiants contre un JWT
 // Route publique : c'est le guichet où l'on obtient son badge VIP.
-app.post("/api/auth/login", async (req, res) => {
+// limiteConnexion passe en premier : il bloque les attaques par force brute.
+app.post("/api/auth/login", limiteConnexion, async (req, res) => {
   // Erreur "muette" : même message que l'email ou le mot de passe soit faux.
   // Un pirate ne sait donc pas lequel des deux est faux.
   const erreurIdentifiants = { erreur: "Identifiants incorrects" };
@@ -116,7 +158,17 @@ app.post("/api/auth/login", async (req, res) => {
       { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN || "1h" },
     );
 
-    // Code 200 = succès. On renvoie le badge au client.
+    // On range le badge dans un cookie HttpOnly : le navigateur le garde
+    // (il survit au F5) et le renvoie tout seul, sans que le JavaScript le voie.
+    // Le cookie expire en même temps que le badge (exp est en secondes).
+    const { exp } = jwt.decode(token);
+    res.cookie(NOM_COOKIE, token, {
+      ...optionsCookie,
+      maxAge: exp * 1000 - Date.now(),
+    });
+
+    // Code 200 = succès. On renvoie aussi le badge dans la réponse :
+    // c'est utile pour tester les routes protégées avec Postman (Bearer).
     res.status(200).json({ message: "Bienvenue Maître du Jeu !", token });
   } catch (erreur) {
     // Problème imprévu (ex : base injoignable) : code 500.
@@ -125,6 +177,23 @@ app.post("/api/auth/login", async (req, res) => {
       .status(500)
       .json({ erreur: "Une erreur interne est survenue dans la Taverne" });
   }
+});
+
+
+// GET /api/auth/session : qui est connecté ?
+// Le Front ne peut pas lire le cookie HttpOnly : il demande donc à l'API
+// si le badge est encore valide (au chargement de la page, après un F5).
+app.get("/api/auth/session", verifierToken, (req, res) => {
+  const { id, email, role } = req.utilisateur;
+  res.status(200).json({ utilisateur: { id, email, role } });
+});
+
+
+// POST /api/auth/logout : se déconnecter
+// Seule l'API peut effacer un cookie HttpOnly.
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie(NOM_COOKIE, optionsCookie);
+  res.status(200).json({ message: "À bientôt dans la Taverne !" });
 });
 
 
@@ -190,12 +259,15 @@ app.get("/api/pnj/:id", async (req, res) => {
 
 
 // POST /api/pnj : créer un nouveau PNJ
-// Route protégée : le Vigile (verifierToken) contrôle le badge d'abord.
-// Si le badge est mauvais, le Vigile répond lui-même et ce code n'est jamais exécuté.
-app.post("/api/pnj", verifierToken, async (req, res) => {
+// Route protégée : le Vigile (verifierToken) contrôle le badge d'abord,
+// puis exigerRole vérifie que c'est bien un Maître du Jeu (voir reserveAuMJ).
+// Si l'un des deux refuse, il répond lui-même et ce code n'est jamais exécuté.
+app.post("/api/pnj", reserveAuMJ, async (req, res) => {
   try {
     // On récupère nom, classe et niveau envoyés par le client.
-    const { nom, classe, niveau } = req.body;
+    // "?? {}" : sans corps JSON, req.body est undefined ; on évite ainsi
+    // un plantage (500) et on renvoie bien un 400 juste en dessous.
+    const { nom, classe, niveau } = req.body ?? {};
 
     // Le nom doit être un texte, et pas vide.
     if (typeof nom !== "string" || nom.trim() === "") {
@@ -240,11 +312,12 @@ app.post("/api/pnj", verifierToken, async (req, res) => {
 
 
 // PATCH /api/pnj/:id : changer le niveau d'un PNJ
-// Route protégée : modifier des données exige d'être connecté.
-app.patch("/api/pnj/:id", verifierToken, async (req, res) => {
+// Route protégée : modifier des données est réservé au Maître du Jeu.
+app.patch("/api/pnj/:id", reserveAuMJ, async (req, res) => {
   try {
     const id = req.params.id; // l'id vient de l'URL
-    const nouveauNiveau = req.body.niveau; // le niveau vient du corps (JSON)
+    // le niveau vient du corps (JSON) ; "?? {}" évite un plantage sans corps
+    const { niveau: nouveauNiveau } = req.body ?? {};
 
     // On vérifie l'id et le niveau.
     if (!estUnIdValide(id)) {
@@ -272,6 +345,12 @@ app.patch("/api/pnj/:id", verifierToken, async (req, res) => {
         .json({ erreur: "PNJ introuvable dans la Taverne" });
     }
 
+    // Trace dans le terminal : on sait quel MJ a modifié quel PNJ.
+    const pnjModifie = resultat.rows[0];
+    console.log(
+      `Niveau de ${pnjModifie.nom} (PNJ ${pnjModifie.id}) passé à ${pnjModifie.niveau} par l'utilisateur ID ${req.utilisateur.id}`,
+    );
+
     // On renvoie le PNJ mis à jour.
     res
       .status(200)
@@ -287,7 +366,7 @@ app.patch("/api/pnj/:id", verifierToken, async (req, res) => {
 
 // DELETE /api/pnj/:id : supprimer un PNJ
 // Route protégée : sinon n'importe qui pourrait vider la Taverne.
-app.delete("/api/pnj/:id", verifierToken, async (req, res) => {
+app.delete("/api/pnj/:id", reserveAuMJ, async (req, res) => {
   try {
     const idCible = req.params.id;
 
@@ -299,7 +378,8 @@ app.delete("/api/pnj/:id", verifierToken, async (req, res) => {
 
     // On supprime le PNJ dans la base.
     const resultat = await pool.query(
-      "DELETE FROM Personnage WHERE id = $1",
+      // RETURNING nom : la base nous renvoie le nom du PNJ supprimé
+      "DELETE FROM Personnage WHERE id = $1 RETURNING nom",
       [idCible],
     );
 
@@ -309,6 +389,11 @@ app.delete("/api/pnj/:id", verifierToken, async (req, res) => {
         .status(404)
         .json({ erreur: "PNJ introuvable dans la Taverne" });
     }
+
+    // Trace dans le terminal : on sait quel MJ a supprimé quel PNJ.
+    console.log(
+      `${resultat.rows[0].nom} (PNJ ${idCible}) supprimé par l'utilisateur ID ${req.utilisateur.id}`,
+    );
 
     res.status(200).json({ message: `Le PNJ numéro ${idCible} a été supprimé` });
   } catch (erreur) {

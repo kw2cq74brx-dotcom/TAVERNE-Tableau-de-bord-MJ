@@ -73,6 +73,7 @@ Le mot de passe est haché avec Bcrypt avant d'être enregistré : la base ne co
 | Message affiché | Cause | Solution |
 |---|---|---|
 | « Email ou mot de passe incorrect. » | Identifiants mal saisis | Retaper le mot de passe à la main (un copier-coller peut ajouter un espace). Ou en définir un nouveau : `npm run create-mj -- <email> <motdepasse>` |
+| « Trop de tentatives de connexion… » | Plus de 10 échecs en 15 minutes depuis la même adresse (protection anti force brute) | Attendre 15 minutes, ou redémarrer l'API en développement |
 | « Impossible de contacter l'API… » | API éteinte, ou page ouverte sur une autre adresse que `http://localhost:3001` (le CORS la bloque) | Lancer l'API avec `npm run dev` et ouvrir exactement `http://localhost:3001` |
 | « L'API ne parvient pas à joindre la base de données… » | L'API ne peut pas se connecter à Neon (`.env` absent ou mal nommé, réseau qui bloque le port 5432) | Vérifier que le fichier s'appelle bien `.env` à la racine, regarder le terminal de l'API, essayer depuis un autre réseau (partage de connexion) |
 
@@ -91,15 +92,34 @@ Au démarrage, le terminal de l'API doit afficher `✅ Connecté avec succès à
 
 | Méthode | Route | Protection | Rôle |
 |---|---|---|---|
-| POST | `/api/auth/login` | Publique | Échange `{ email, password }` contre un JWT |
+| POST | `/api/auth/login` | Publique, limitée à 10 échecs / 15 min | Échange `{ email, password }` contre un JWT (renvoyé dans un cookie HttpOnly et dans la réponse) |
+| GET | `/api/auth/session` | JWT | Indique qui est connecté (utilisé par le Front au chargement) |
+| POST | `/api/auth/logout` | Publique | Efface le cookie du badge |
 | GET | `/api/pnj` | Publique | Liste des PNJ |
 | GET | `/api/pnj/:id` | Publique | Détail d'un PNJ |
-| POST | `/api/pnj` | JWT | Crée un PNJ `{ nom, classe, niveau }` |
-| PATCH | `/api/pnj/:id` | JWT | Modifie le niveau `{ niveau }` |
-| DELETE | `/api/pnj/:id` | JWT | Supprime un PNJ |
+| POST | `/api/pnj` | JWT + rôle MJ | Crée un PNJ `{ nom, classe, niveau }` |
+| PATCH | `/api/pnj/:id` | JWT + rôle MJ | Modifie le niveau `{ niveau }` |
+| DELETE | `/api/pnj/:id` | JWT + rôle MJ | Supprime un PNJ |
 
-Les routes protégées attendent l'en-tête `Authorization: Bearer <token>`.
-Sans badge : **401**. Badge falsifié ou expiré : **403**.
+Le badge est accepté de deux façons :
+- **Cookie HttpOnly** `token_taverne` : utilisé par le Front, envoyé automatiquement par le navigateur.
+- **En-tête** `Authorization: Bearer <token>` : pratique pour tester avec Postman.
+
+Sans badge : **401**. Badge falsifié ou expiré : **403**. Badge valide mais rôle autre que `Maitre_Du_Jeu` : **403**. Trop de tentatives de connexion : **429**.
+
+## Sécurité
+
+| Mesure | Où |
+|---|---|
+| Mots de passe hachés avec Bcrypt (jamais en clair) | `create-mj.js`, `server.js` |
+| Authentification stateless par JWT signé (HS256, 1 h) | `server.js`, `middlewares/auth.js` |
+| Contrôle du rôle (`exigerRole`) sur les routes de modification | `middlewares/auth.js` |
+| Badge stocké dans un cookie **HttpOnly + SameSite=Strict** (illisible par le JavaScript, donc protégé du vol par XSS) | `server.js`, `front/app/components/session.js` |
+| Limitation des tentatives de connexion (anti force brute) | `server.js` (express-rate-limit) |
+| En-têtes HTTP de sécurité | `server.js` (helmet) |
+| CORS limité à `http://localhost:3001` | `server.js` |
+| Requêtes SQL paramétrées (anti injection) | `server.js`, `create-mj.js` |
+| Secrets dans `.env`, jamais versionné | `.gitignore` |
 
 ## Variables d'environnement
 

@@ -1,8 +1,13 @@
 // Fichier : app/components/session.js
-// Outils partagés pour la session du MJ.
-// Ces fonctions utilisent localStorage : on ne les appelle que dans
-// un useEffect ou un gestionnaire d'événement (jamais côté serveur,
-// car le serveur n'a pas de navigateur, donc pas de localStorage).
+// Outils partagés pour dialoguer avec l'API.
+//
+// Sécurité de la session : le badge (JWT) n'est PAS stocké dans le localStorage.
+// L'API le range dans un cookie HttpOnly + SameSite :
+// - HttpOnly : le JavaScript de la page ne peut pas le lire. Même si un pirate
+//   injectait un script (faille XSS), il ne pourrait pas voler le badge.
+// - SameSite : le navigateur ne l'envoie pas depuis un autre site (protection CSRF).
+// Le navigateur garde ce cookie (il survit au F5) et l'envoie tout seul à l'API,
+// à condition que fetch soit appelé avec credentials: "include".
 
 // Adresse de l'API, lue dans .env.local (préfixe NEXT_PUBLIC_ obligatoire
 // pour que la variable soit lisible dans le navigateur).
@@ -11,41 +16,35 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
-// Clé sous laquelle le JWT est rangé dans le "coffre-fort" du navigateur
-const CLE_TOKEN = "token_taverne";
+// Message affiché quand le badge est absent, faux ou expiré.
+export const MESSAGE_SESSION =
+  "Votre session a expiré ou est invalide. Veuillez vous reconnecter.";
 
-// Lire le badge (renvoie null s'il n'y en a pas).
-export function lireToken() {
-  return localStorage.getItem(CLE_TOKEN);
+// Appelle l'API en joignant le cookie du badge.
+// chemin : ex. "/api/pnj". options : comme pour fetch (method, body...).
+// Si "body" est fourni (un objet), il est transformé en texte JSON.
+export function appelerApi(chemin, { body, ...options } = {}) {
+  return fetch(`${API_URL}${chemin}`, {
+    ...options,
+    // "include" : le navigateur envoie le cookie HttpOnly avec la requête
+    credentials: "include",
+    // On ne déclare du JSON que si on en envoie vraiment
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
 }
 
-// Ranger le badge (il reste même après un F5 ou une fermeture d'onglet).
-export function sauverToken(token) {
-  localStorage.setItem(CLE_TOKEN, token);
+// Lit le message d'erreur renvoyé par l'API ({ erreur: "..." }).
+// Si la réponse n'est pas du JSON lisible, on affiche le code HTTP.
+export async function lireMessageErreur(reponse) {
+  const corps = await reponse.json().catch(() => ({}));
+  return corps.erreur || `Erreur serveur : code ${reponse.status}`;
 }
 
-// Jeter le badge (déconnexion).
-export function supprimerToken() {
-  localStorage.removeItem(CLE_TOKEN);
-}
-
-// Le payload d'un JWT n'est pas chiffré, seulement encodé en Base64 :
-// on peut donc lire sa date d'expiration ("exp") côté navigateur.
-// Cela évite d'afficher le tableau de bord avec un badge déjà périmé.
-// (La vraie vérification de la signature reste faite par l'API.)
-export function tokenEstEncoreValide(token) {
-  try {
-    // Un JWT a 3 parties séparées par des points : header.payload.signature
-    // split(".")[1] garde la 2e partie : le payload.
-    // Le JWT utilise le Base64 "URL" (- et _) : on le convertit pour atob
-    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    // atob décode le Base64, JSON.parse transforme le texte en objet.
-    const payload = JSON.parse(atob(base64));
-    // exp est en secondes, Date.now() en millisecondes : on multiplie par 1000.
-    // true si la date d'expiration n'est pas encore passée.
-    return payload.exp * 1000 > Date.now();
-  } catch {
-    // Badge illisible (abîmé ou trafiqué) : on le considère comme invalide.
-    return false;
-  }
+// fetch ne lève une erreur (TypeError) que si l'API ne répond pas du tout :
+// serveur éteint, réseau coupé ou blocage CORS. Ce message l'explique.
+export function messageErreurReseau(err) {
+  return err instanceof TypeError
+    ? `Impossible de contacter l'API (${API_URL}). Vérifiez qu'elle est démarrée et que la page est ouverte sur http://localhost:3001.`
+    : err.message;
 }

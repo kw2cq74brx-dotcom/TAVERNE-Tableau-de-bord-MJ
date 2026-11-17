@@ -2,7 +2,11 @@
 "use client"; // Formulaire interactif : il a besoin du navigateur
 
 import { useState } from "react";
-import { API_URL, sauverToken } from "./session";
+import {
+  appelerApi,
+  lireMessageErreur,
+  messageErreurReseau,
+} from "./session";
 import styles from "../page.module.css";
 
 // Fonctionnalité 1 : le sas d'authentification
@@ -27,51 +31,33 @@ export default function FormulaireLogin({ onLoginSuccess, message }) {
       setChargement(true); // le bouton affiche "Connexion…"
       setErreur(null); // on efface l'ancienne erreur
 
-      // On envoie l'email et le mot de passe à l'API.
-      const reponse = await fetch(`${API_URL}/api/auth/login`, {
+      // On envoie l'email et le mot de passe à l'API (méthode POST, corps JSON).
+      const reponse = await appelerApi("/api/auth/login", {
         method: "POST",
-        // On prévient l'API qu'on lui envoie du JSON
-        headers: { "Content-Type": "application/json" },
-        // HTTP ne transporte que du texte : on sérialise l'objet
-        body: JSON.stringify({ email, password: motDePasse }),
+        body: { email, password: motDePasse },
       });
 
       // fetch ne va dans le catch qu'en cas de panne réseau :
-      // les erreurs HTTP (401, 500...) doivent être vérifiées à la main.
+      // les erreurs HTTP (401, 429, 500...) doivent être vérifiées à la main.
       // 401 = identifiants refusés par l'API.
       if (reponse.status === 401) {
         throw new Error("Email ou mot de passe incorrect.");
       }
-      // 500 = l'API fonctionne mais n'arrive pas à interroger la base Neon.
-      if (reponse.status === 500) {
-        throw new Error(
-          "L'API ne parvient pas à joindre la base de données. Regardez le terminal de l'API.",
-        );
-      }
-      // reponse.ok vaut true si le code est entre 200 et 299.
+      // Autres erreurs (400 champ manquant, 429 trop de tentatives, 500...) :
+      // on affiche le message précis renvoyé par l'API dans { erreur: "..." }.
       if (!reponse.ok) {
-        throw new Error(`Erreur serveur : code ${reponse.status}`);
+        throw new Error(await lireMessageErreur(reponse));
       }
 
-      // On transforme la réponse (texte JSON) en objet JavaScript.
-      const donnees = await reponse.json();
-
-      // On range le badge sur le "disque dur" du navigateur pour qu'il
-      // survive à un rafraîchissement (un useState serait vidé au F5).
-      // On est dans un gestionnaire d'événement : localStorage est accessible.
-      sauverToken(donnees.token);
-
+      // Succès : l'API a rangé le badge dans un cookie HttpOnly.
+      // Le navigateur le garde (il survit au F5) et le renverra tout seul ;
+      // le JavaScript n'a donc rien à stocker lui-même.
       // On prévient le parent : il bascule vers le tableau de bord
       onLoginSuccess();
     } catch (err) {
       // "throw" plus haut nous envoie ici avec le message d'erreur.
-      // TypeError = fetch n'a obtenu aucune réponse : API éteinte ou bloquée par le CORS.
-      // (Le texte de cette erreur change selon le navigateur, on teste donc son type.)
-      setErreur(
-        err instanceof TypeError
-          ? `Impossible de contacter l'API (${API_URL}). Vérifiez qu'elle est démarrée et que la page est ouverte sur http://localhost:3001.`
-          : err.message,
-      );
+      // Si l'API n'a pas répondu du tout, on explique pourquoi.
+      setErreur(messageErreurReseau(err));
     } finally {
       // "finally" s'exécute toujours (succès ou erreur) : fin du chargement.
       setChargement(false);
