@@ -68,6 +68,16 @@ npm run create-mj -- <email> <motdepasse>
 
 Le mot de passe est haché avec Bcrypt avant d'être enregistré : la base ne contient jamais de mot de passe en clair.
 
+## Dépannage de la connexion
+
+| Message affiché | Cause | Solution |
+|---|---|---|
+| « Email ou mot de passe incorrect. » | Identifiants mal saisis | Retaper le mot de passe à la main (un copier-coller peut ajouter un espace). Ou en définir un nouveau : `npm run create-mj -- <email> <motdepasse>` |
+| « Impossible de contacter l'API… » | API éteinte, ou page ouverte sur une autre adresse que `http://localhost:3001` (le CORS la bloque) | Lancer l'API avec `npm run dev` et ouvrir exactement `http://localhost:3001` |
+| « L'API ne parvient pas à joindre la base de données… » | L'API ne peut pas se connecter à Neon (`.env` absent ou mal nommé, réseau qui bloque le port 5432) | Vérifier que le fichier s'appelle bien `.env` à la racine, regarder le terminal de l'API, essayer depuis un autre réseau (partage de connexion) |
+
+Au démarrage, le terminal de l'API doit afficher `✅ Connecté avec succès à la base de données PostgreSQL !`. Sinon, le problème vient du `.env` ou du réseau.
+
 ## Scripts de l'API
 
 | Commande | Rôle |

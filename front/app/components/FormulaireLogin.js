@@ -42,6 +42,12 @@ export default function FormulaireLogin({ onLoginSuccess, message }) {
       if (reponse.status === 401) {
         throw new Error("Email ou mot de passe incorrect.");
       }
+      // 500 = l'API fonctionne mais n'arrive pas à interroger la base Neon.
+      if (reponse.status === 500) {
+        throw new Error(
+          "L'API ne parvient pas à joindre la base de données. Regardez le terminal de l'API.",
+        );
+      }
       // reponse.ok vaut true si le code est entre 200 et 299.
       if (!reponse.ok) {
         throw new Error(`Erreur serveur : code ${reponse.status}`);
@@ -59,10 +65,11 @@ export default function FormulaireLogin({ onLoginSuccess, message }) {
       onLoginSuccess();
     } catch (err) {
       // "throw" plus haut nous envoie ici avec le message d'erreur.
-      // "Failed to fetch" = API éteinte ou bloquée par le CORS
+      // TypeError = fetch n'a obtenu aucune réponse : API éteinte ou bloquée par le CORS.
+      // (Le texte de cette erreur change selon le navigateur, on teste donc son type.)
       setErreur(
-        err.message === "Failed to fetch"
-          ? "Impossible de contacter la Taverne. L'API est-elle démarrée ?"
+        err instanceof TypeError
+          ? `Impossible de contacter l'API (${API_URL}). Vérifiez qu'elle est démarrée et que la page est ouverte sur http://localhost:3001.`
           : err.message,
       );
     } finally {

@@ -6,7 +6,10 @@
 
 // Adresse de l'API, lue dans .env.local (préfixe NEXT_PUBLIC_ obligatoire
 // pour que la variable soit lisible dans le navigateur).
-export const API_URL = process.env.NEXT_PUBLIC_API_URL;
+// Si .env.local est absent, on utilise l'adresse locale par défaut :
+// sans cela, fetch appellerait "undefined/api/..." et échouerait.
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 // Clé sous laquelle le JWT est rangé dans le "coffre-fort" du navigateur
 const CLE_TOKEN = "token_taverne";

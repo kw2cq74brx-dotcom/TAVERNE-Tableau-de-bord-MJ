@@ -84,7 +84,7 @@ export default function FormulaireAjoutPnj({ onPnjAjoute, onSessionExpiree }) {
     } catch (err) {
       console.error("Échec de l'ajout :", err.message);
       setErreur(
-        err.message === "Failed to fetch"
+        err instanceof TypeError
           ? "Impossible de contacter la Taverne."
           : err.message,
       );

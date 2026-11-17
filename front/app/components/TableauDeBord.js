@@ -40,7 +40,7 @@ export default function TableauDeBord({ onDeconnexion, onSessionExpiree }) {
       } catch (err) {
         console.error("Problème avec l'API :", err);
         setErreur(
-          err.message === "Failed to fetch"
+          err instanceof TypeError
             ? "Impossible de contacter la Taverne."
             : err.message,
         );
