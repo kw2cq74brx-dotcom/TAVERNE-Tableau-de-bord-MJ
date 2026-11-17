@@ -22,8 +22,8 @@ Le projet couvre trois TP :
 ### 1. Cloner le dépôt
 
 ```bash
-git clone https://github.com/kw2cq74brx-dotcom/TP-de-synth-se-taverne.git
-cd TP-de-synth-se-taverne
+git clone https://github.com/kw2cq74brx-dotcom/TAVERNE-Tableau-de-bord-MJ.git
+cd TAVERNE-Tableau-de-bord-MJ
 ```
 
 ### 2. L'API (terminal n°1)
